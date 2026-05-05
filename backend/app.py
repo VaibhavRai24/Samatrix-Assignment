@@ -50,14 +50,51 @@ class Project(Base):
 class Task(Base):
     __tablename__ = "tasks"
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, index=True)
+    title = Column(String)
     description = Column(String)
-    status = Column(Enum(StatusEnum), default=StatusEnum.Pending)
+    status = Column(String, default="Pending")
     deadline = Column(DateTime)
     project_id = Column(Integer, ForeignKey("projects.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
-    project = relationship("Project", back_populates="tasks")
     assignee = relationship("User", back_populates="tasks")
+    project = relationship("Project", back_populates="tasks")
+    submissions = relationship("TaskSubmission", back_populates="task", cascade="all, delete-orphan")
+
+class TaskSubmission(Base):
+    __tablename__ = "task_submissions"
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    submission_url = Column(String)
+    tags = Column(String)
+    description = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    task = relationship("Task", back_populates="submissions")
+    user = relationship("User")
+
+# Routes for Task Submissions
+@app.post("/tasks/{task_id}/submit")
+def submit_task(task_id: int, submission: schemas.TaskSubmissionCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not task: raise HTTPException(status_code=404, detail="Task not found")
+    if task.user_id != current_user.id: raise HTTPException(status_code=403, detail="Not assigned to this task")
+    
+    db_sub = models.TaskSubmission(**submission.dict(), task_id=task_id, user_id=current_user.id)
+    task.status = "Completed"
+    db.add(db_sub)
+    db.commit()
+    return {"message": "Task submitted successfully"}
+
+@app.get("/tasks/{task_id}/submissions")
+def get_task_submissions(task_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if not task: raise HTTPException(status_code=404, detail="Task not found")
+    
+    query = db.query(models.TaskSubmission).filter(models.TaskSubmission.task_id == task_id)
+    if current_user.role != "Admin":
+        query = query.filter(models.TaskSubmission.user_id == current_user.id)
+    
+    return query.all()
 
 class ProjectSubmission(Base):
     __tablename__ = "project_submissions"
@@ -167,6 +204,37 @@ def require_admin(current_user: User = Depends(get_current_user)):
     if current_user.role != RoleEnum.Admin:
         raise HTTPException(status_code=403, detail="Not permitted")
     return current_user
+
+# Database Migration Helper
+def migrate_db():
+    import sqlite3
+    conn = sqlite3.connect("sql_app.db")
+    cursor = conn.cursor()
+    try:
+        cursor.execute("ALTER TABLE tasks ADD COLUMN submission_link TEXT")
+        cursor.execute("ALTER TABLE tasks ADD COLUMN submission_notes TEXT")
+    except:
+        pass
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS task_submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER,
+                user_id INTEGER,
+                submission_url TEXT,
+                tags TEXT,
+                description TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(task_id) REFERENCES tasks(id),
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+        """)
+        conn.commit()
+    except Exception as e:
+        print(f"Migration error: {e}")
+    conn.close()
+
+migrate_db()
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI()
