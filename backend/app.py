@@ -72,29 +72,6 @@ class TaskSubmission(Base):
     task = relationship("Task", back_populates="submissions")
     user = relationship("User")
 
-# Routes for Task Submissions
-@app.post("/tasks/{task_id}/submit")
-def submit_task(task_id: int, submission: schemas.TaskSubmissionCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    task = db.query(models.Task).filter(models.Task.id == task_id).first()
-    if not task: raise HTTPException(status_code=404, detail="Task not found")
-    if task.user_id != current_user.id: raise HTTPException(status_code=403, detail="Not assigned to this task")
-    
-    db_sub = models.TaskSubmission(**submission.dict(), task_id=task_id, user_id=current_user.id)
-    task.status = "Completed"
-    db.add(db_sub)
-    db.commit()
-    return {"message": "Task submitted successfully"}
-
-@app.get("/tasks/{task_id}/submissions")
-def get_task_submissions(task_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    task = db.query(models.Task).filter(models.Task.id == task_id).first()
-    if not task: raise HTTPException(status_code=404, detail="Task not found")
-    
-    query = db.query(models.TaskSubmission).filter(models.TaskSubmission.task_id == task_id)
-    if current_user.role != "Admin":
-        query = query.filter(models.TaskSubmission.user_id == current_user.id)
-    
-    return query.all()
 
 class ProjectSubmission(Base):
     __tablename__ = "project_submissions"
@@ -143,6 +120,11 @@ Project.submissions = relationship("ProjectSubmission", backref="project")
 class SubmissionCreate(BaseModel):
     link: str
     notes: str
+
+class TaskSubmissionCreate(BaseModel):
+    submission_url: str
+    tags: str
+    description: str
 
 class TaskCreate(BaseModel):
     title: str
@@ -369,3 +351,27 @@ def get_dashboard(db: Session = Depends(get_db), user: User = Depends(get_curren
         pending_tasks=sum(1 for t in tasks if t.status != StatusEnum.Completed),
         overdue_tasks=sum(1 for t in tasks if t.deadline < now and t.status != StatusEnum.Completed)
     )
+
+# Routes for Task Submissions
+@app.post("/tasks/{task_id}/submit")
+def submit_task(task_id: int, submission: TaskSubmissionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task: raise HTTPException(status_code=404, detail="Task not found")
+    if task.user_id != current_user.id: raise HTTPException(status_code=403, detail="Not assigned to this task")
+    
+    db_sub = TaskSubmission(**submission.model_dump(), task_id=task_id, user_id=current_user.id)
+    task.status = "Completed"
+    db.add(db_sub)
+    db.commit()
+    return {"message": "Task submitted successfully"}
+
+@app.get("/tasks/{task_id}/submissions")
+def get_task_submissions(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task: raise HTTPException(status_code=404, detail="Task not found")
+    
+    query = db.query(TaskSubmission).filter(TaskSubmission.task_id == task_id)
+    if current_user.role != "Admin":
+        query = query.filter(TaskSubmission.user_id == current_user.id)
+    
+    return query.all()
