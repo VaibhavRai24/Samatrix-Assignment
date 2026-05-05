@@ -1,4 +1,11 @@
 Project Overview
+NOTE: DUE TO LACK OF TIME I TRIED TO FOCUS ON THE FUNCTIONALITY RATHER THEN UI ENHANCEMENTS
+
+
+
+
+
+
 The Project Management System (PMS) is a full‑stack web application that enables an Admin user to create and manage projects and tasks, while Member users can view assigned projects, start tasks, and submit their work. Submissions consist of a URL (e.g., GitHub repo or live demo) and a free‑form description. After a submission the related task or project status updates to Completed and the submitted data is displayed for both the member and the admin.
 
 Key functional requirements:
